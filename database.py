@@ -15,6 +15,7 @@ def inicializar_db():
     # Crea la tabla tickets si todavia no existe, se llama una vez al arrancar
     conexion = conectar()
     cursor = conexion.cursor()
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tickets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,6 +27,39 @@ def inicializar_db():
             fecha_creacion TEXT NOT NULL
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS soluciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            categoria TEXT NOT NULL UNIQUE,
+            solucion TEXT NOT NULL
+        )
+    """)
+
+    soluciones_iniciales = [
+        (
+            "Hardware",
+            "Probá desconectar y reconectar el dispositivo, verificar los cables y reiniciar el equipo."
+        ),
+        (
+            "Software",
+            "Probá cerrar y volver a abrir el programa. Si el error continúa, reiniciá el equipo y verificá si hay actualizaciones pendientes."
+        ),
+        (
+            "Redes",
+            "Probá verificar la conexión WiFi o el cable de red. Si sigue sin funcionar, reiniciá el router o informá al área técnica."
+        ),
+        (
+            "Accesos",
+            "Verificá que el usuario y la contraseña estén bien escritos, que las mayúsculas estén desactivadas y que la cuenta no esté bloqueada."
+        )
+    ]
+
+    cursor.executemany("""
+        INSERT OR IGNORE INTO soluciones (categoria, solucion)
+        VALUES (?, ?)
+    """, soluciones_iniciales)
+
     conexion.commit()
     conexion.close()
 
@@ -34,14 +68,18 @@ def crear_ticket(chat_id: int, categoria: str, urgencia: str, descripcion: str, 
     # Inserta un ticket nuevo y devuelve el id que le asigno la base
     conexion = conectar()
     cursor = conexion.cursor()
+
     fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     cursor.execute("""
         INSERT INTO tickets (chat_id, categoria, urgencia, descripcion, estado, fecha_creacion)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (chat_id, categoria, urgencia, descripcion, estado, fecha_actual))
+
     conexion.commit()
     ticket_id = cursor.lastrowid
     conexion.close()
+
     return ticket_id
 
 
@@ -79,3 +117,23 @@ def obtener_todos_los_tickets():
     filas = cursor.fetchall()
     conexion.close()
     return filas
+
+
+def obtener_solucion_por_categoria(categoria: str):
+    conexion = conectar()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT solucion
+        FROM soluciones
+        WHERE categoria = ?
+        LIMIT 1
+    """, (categoria,))
+
+    fila = cursor.fetchone()
+    conexion.close()
+
+    if fila:
+        return fila[0]
+
+    return None

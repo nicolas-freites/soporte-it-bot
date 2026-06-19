@@ -39,12 +39,13 @@ logger = logging.getLogger(__name__)
 
 
 # ---------- FAQ basica para autoresolucion (Gateway 2 del BPMN) ----------
-FAQ_RESPUESTAS = {
-    "Hardware": "Proba desconectar y reconectar el dispositivo, y reiniciar el equipo.",
-    "Software": "Proba cerrar y volver a abrir el programa, y revisar si hay actualizaciones pendientes.",
-    "Redes": "Proba reiniciar el router y verificar que el cable o el wifi esten conectados.",
-    "Accesos": "Verifica que las mayusculas (Caps Lock) esten apagadas y que el usuario este escrito correctamente.",
-}
+#FAQ_RESPUESTAS = {
+#    "Hardware": "Probá desconectar y reconectar el dispositivo, y reiniciar el equipo.",
+#    "Software": "Probá cerrar y volver a abrir el programa, y revisar si hay actualizaciones pendientes.",
+#    "Redes": "Probá reiniciar el router y verificar que el cable o el wifi esten conectados.",
+#    "Accesos": "Verifica que las mayusculas (Caps Lock) esten apagadas y que el usuario este escrito correctamente.",
+#}
+
 
 
 # ---------- Comando /start ----------
@@ -158,7 +159,8 @@ async def manejar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # --- Paso: esperando diagnostico (Gateway 2) ---
+    
+        # --- Paso: esperando diagnostico (Gateway 2) ---
     if estado_actual == Estado.ESPERANDO_DIAGNOSTICO:
         # Camino infeliz: descripcion vacia o demasiado corta
         if len(texto) < 3:
@@ -171,26 +173,42 @@ async def manejar_mensaje(update: Update, context: ContextTypes.DEFAULT_TYPE):
         categoria = sesion["datos"]["categoria"]
         urgencia = sesion["datos"]["urgencia"]
 
-        # Gateway 2: decide si se autoresuelve con la FAQ o se escala a un tecnico
+        # Gateway 2: decide si se autoresuelve con la base de soluciones o se escala a un tecnico
         palabras_clave_sin_solucion = ["no funciono", "no funciona", "sigue igual", "no anda"]
         necesita_escalar = any(p in texto.lower() for p in palabras_clave_sin_solucion)
 
         if necesita_escalar:
             ticket_id = database.crear_ticket(chat_id, categoria, urgencia, texto, "escalado")
             actualizar_estado(chat_id, Estado.ESCALADO)
+
             await update.message.reply_text(
                 f"Ya veo que probaste alternativas sin exito. Genere el ticket #{ticket_id} "
                 f"y lo derive a un tecnico humano."
             )
-        else:
-            respuesta_faq = FAQ_RESPUESTAS.get(categoria, "Te recomiendo reiniciar el equipo y volver a intentar.")
-            ticket_id = database.crear_ticket(chat_id, categoria, urgencia, texto, "resuelto")
-            actualizar_estado(chat_id, Estado.RESUELTO)
+            return
+
+        # Si no necesita escalar, busca una solucion en la base de datos
+        respuesta_faq = database.obtener_solucion_por_categoria(categoria)
+
+        if respuesta_faq is None:
+            ticket_id = database.crear_ticket(chat_id, categoria, urgencia, texto, "escalado")
+            actualizar_estado(chat_id, Estado.ESCALADO)
+
             await update.message.reply_text(
-                f"Proba esto: {respuesta_faq}\n\n"
-                f"Quedo registrado como ticket #{ticket_id} resuelto automaticamente. "
-                f"Si el problema continua, escribi /start para generar un nuevo ticket."
+                f"No encontre una solucion automatica para esta categoria.\n"
+                f"Genere el ticket #{ticket_id} y lo derive a soporte humano."
             )
+            return
+
+        # Si encontro solucion, registra el ticket como resuelto
+        ticket_id = database.crear_ticket(chat_id, categoria, urgencia, texto, "resuelto")
+        actualizar_estado(chat_id, Estado.RESUELTO)
+
+        await update.message.reply_text(
+            f"Probá esto: {respuesta_faq}\n\n"
+            f"Quedo registrado como ticket #{ticket_id} resuelto automaticamente.\n"
+            f"Si el problema continua, escribi /start para generar un nuevo ticket."
+        )
         return
 
     # --- Si el usuario escribe algo sin haber iniciado con /start ---
